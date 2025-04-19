@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cwctype>
 #include <memory>
+#include <regex>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -22,6 +23,7 @@ namespace {
     constexpr int ID_CLEAR_BUTTON = 121;
     constexpr int ID_ADD_FIELD_BUTTON = 122;
     constexpr int ID_EXTRA_FIELD_BASE = 123;
+    constexpr int ID_PARSE_BUTTON = 124;
     constexpr int MAX_EXTRA_FIELDS = 3;
     constexpr int COMBO_COLUMNS = 4;
     constexpr int DEFAULT_MARGIN = 5;
@@ -200,6 +202,71 @@ namespace {
         SendMessage(hButton, WM_SETFONT, reinterpret_cast<WPARAM>(hFont), TRUE);
         return hButton;
     }
+
+    std::vector<std::wstring> SplitString(const std::wstring& input, wchar_t delimiter) {
+        std::vector<std::wstring> result;
+        std::wstringstream ss(input);
+        std::wstring item;
+
+        while (std::getline(ss, item, delimiter)) {
+            result.push_back(item);
+        }
+
+        return result;
+    }
+
+    void ParseTextAndFillControls(AppState* state, const std::wstring& text) {
+        if (!state) return;
+
+        std::vector<std::wstring> lines = SplitString(text, L'\n');
+        if (lines.empty()) return;
+
+        // Берем последнюю строку (самую свежую запись)
+        std::wstring lastLine = lines.back();
+        std::vector<std::wstring> parts = SplitString(lastLine, L';');
+
+        if (parts.size() < 2) return; // Минимум ID и логин
+
+        // Заполняем ID
+        if (state->hIdEdit && !parts[0].empty()) {
+            SetWindowTextStr(state->hIdEdit, parts[0]);
+            try {
+                state->idCounter = std::stoi(parts[0]) + 1;
+            }
+            catch (...) {
+                state->idCounter = 1;
+            }
+        }
+
+        // Заполняем логин
+        if (state->hLoginEdit && parts.size() > 1 && !parts[1].empty()) {
+            std::wstring login = parts[1];
+            // Удаляем суффикс _XX если есть
+            size_t underscorePos = login.find_last_of(L'_');
+            if (underscorePos != std::wstring::npos &&
+                login.length() - underscorePos == 3 &&
+                iswdigit(login[underscorePos + 1]) &&
+                iswdigit(login[underscorePos + 2])) {
+                login = login.substr(0, underscorePos);
+            }
+            SetWindowTextStr(state->hLoginEdit, login);
+        }
+
+        // Заполняем комбобоксы
+        for (size_t i = 0; i < state->comboBoxes.size() && (i + 2) < parts.size(); ++i) {
+            if (!parts[i + 2].empty()) {
+                SetWindowTextStr(state->comboBoxes[i], parts[i + 2]);
+            }
+        }
+
+        // Заполняем дополнительные поля
+        size_t offset = 2 + state->comboBoxes.size();
+        for (size_t i = 0; i < state->extraFields.size() && (offset + i) < parts.size(); ++i) {
+            if (!parts[offset + i].empty()) {
+                SetWindowTextStr(state->extraFields[i], parts[offset + i]);
+            }
+        }
+    }
 }
 
 // Основные функции приложения
@@ -265,6 +332,16 @@ namespace {
         SetWindowTextStr(state->hText, L"");
         SetWindowTextStr(state->hIdEdit, L"1");
         SetWindowTextStr(state->hLoginEdit, L"user");
+
+        // Очистка комбобоксов
+        for (HWND hCombo : state->comboBoxes) {
+            SetWindowTextStr(hCombo, L"");
+        }
+
+        // Очистка дополнительных полей
+        for (HWND hField : state->extraFields) {
+            SetWindowTextStr(hField, L"");
+        }
     }
 
     void AddExtraField(AppState* state, HWND hWnd) {
@@ -343,6 +420,8 @@ namespace {
             DEFAULT_MARGIN + 160, buttonsY, BUTTON_WIDTH, BUTTON_HEIGHT, SWP_NOZORDER);
         SetWindowPos(GetDlgItem(hWnd, ID_ADD_FIELD_BUTTON), NULL,
             DEFAULT_MARGIN + 320, buttonsY, BUTTON_WIDTH, BUTTON_HEIGHT, SWP_NOZORDER);
+        SetWindowPos(GetDlgItem(hWnd, ID_PARSE_BUTTON), NULL,
+            DEFAULT_MARGIN + 480, buttonsY, BUTTON_WIDTH, BUTTON_HEIGHT, SWP_NOZORDER);
     }
 }
 
@@ -406,6 +485,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         CreateButton(hWnd, L"Добавить запись", DEFAULT_MARGIN, 700, ID_BUTTON, pState->hFont);
         CreateButton(hWnd, L"Очистка", DEFAULT_MARGIN + 160, 700, ID_CLEAR_BUTTON, pState->hFont);
         CreateButton(hWnd, L"Добавить поле", DEFAULT_MARGIN + 320, 700, ID_ADD_FIELD_BUTTON, pState->hFont);
+        CreateButton(hWnd, L"Разобрать текст", DEFAULT_MARGIN + 480, 700, ID_PARSE_BUTTON, pState->hFont);
 
         SetWindowPos(hWnd, NULL, 0, 0, 800, 800, SWP_NOMOVE | SWP_NOZORDER);
         break;
@@ -431,6 +511,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             case ID_BUTTON: UpdateTextBox(pState); break;
             case ID_CLEAR_BUTTON: ResetCounters(pState); break;
             case ID_ADD_FIELD_BUTTON: AddExtraField(pState, hWnd); break;
+            case ID_PARSE_BUTTON: {
+                if (pState && pState->hText) {
+                    std::wstring text = GetWindowTextStr(pState->hText);
+                    ParseTextAndFillControls(pState, text);
+                }
+                break;
+            }
             }
         }
         break;
