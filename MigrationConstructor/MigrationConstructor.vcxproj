@@ -133,6 +133,7 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="FileName.cpp" />
     <ClCompile Include="MigrationConstructor.cpp" />
   </ItemGroup>
   <ItemGroup>

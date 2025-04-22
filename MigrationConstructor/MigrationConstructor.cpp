@@ -39,7 +39,7 @@ namespace {
         L"department.txt", L"protectedInfoAccess.txt", L"desks.txt", L"region.txt",
         L"personalNumber.txt", L"pointOfSale.txt", L"coordinator.txt",
         L"BaseMarketFinanceSectors.txt", L"CredDocInvestOperatons.txt",
-        L"middleOfficeSub.txt", L"lawyersSub.txt", L"percIndCoordinator.txt"
+        L"percIndCoordinator.txt"
     };
 }
 
